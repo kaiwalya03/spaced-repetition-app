@@ -145,6 +145,7 @@
             padding: 12px 24px; border-radius: 25px; cursor: pointer; font-weight: 600; transition: all 0.3s ease;
         }
         .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(16, 185, 129, 0.3); }
+        .btn.secondary { background: rgba(255,255,255,.2); border:1px solid rgba(255,255,255,.3); }
 
         /* Topics List */
         .topic-list { display: grid; gap: 15px; }
@@ -255,6 +256,25 @@
             display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.72em;
             background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.22); margin-right: 6px;
         }
+
+        /* Bulk modal specifics */
+        .tabs { display:flex; gap:8px; margin-bottom:14px; }
+        .tab {
+            padding:8px 14px; border-radius:12px; cursor:pointer; font-weight:700;
+            background: rgba(255,255,255,.18); border:1px solid rgba(255,255,255,.25);
+        }
+        .tab.active { background: linear-gradient(45deg,#10b981,#059669); }
+        .tab-panel { display:none; }
+        .tab-panel.show { display:block; }
+        .preview-box {
+            background: rgba(255,255,255,.08);
+            border: 1px solid rgba(255,255,255,.18);
+            border-radius: 12px; padding: 12px; margin-top: 10px; max-height: 200px; overflow:auto;
+        }
+        .preview-item { padding:6px 8px; border-bottom: 1px dashed rgba(255,255,255,.15); font-size:.95em; }
+        .preview-item:last-child { border-bottom: none; }
+        .helper { font-size:.85em; opacity:.85; margin-top:8px; }
+        .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
     </style>
 </head>
 <body>
@@ -314,7 +334,7 @@
                 <p style="font-size: 0.9em; opacity: 0.8; margin-bottom: 15px;">
                     Choose one or more intervals - topic will repeat on ALL selected schedules
                 </p>
-                <div class="interval-options">
+                <div class="interval-options" id="mainIntervalOptions">
                     <button class="interval-btn" data-days="1">1 Day</button>
                     <button class="interval-btn" data-days="7">7 Days</button>
                     <button class="interval-btn" data-days="14">14 Days</button>
@@ -335,7 +355,10 @@
                 </div>
             </div>
 
-            <button class="btn" onclick="addTopic()">Add Topic</button>
+            <div class="row" style="margin-top: 10px; gap:12px;">
+                <button class="btn" onclick="addTopic()">Add Topic</button>
+                <button class="btn secondary" onclick="openBulkModal()">Bulk Add</button>
+            </div>
         </div>
     </div>
 
@@ -378,12 +401,69 @@
     </div>
 </div>
 
+<!-- Bulk Add Modal -->
+    <div class="modal-overlay" id="bulkModal">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">Bulk Add Topics</div>
+                <button class="modal-close" id="bulkCloseBtn">✕</button>
+            </div>
+
+            <div class="tabs">
+                <button class="tab active" data-tab="paste">Paste from Excel/CSV</button>
+                <button class="tab" data-tab="upload">Upload CSV</button>
+            </div>
+
+            <!-- Paste Panel -->
+            <div id="tab-paste" class="tab-panel show">
+                <label class="helper">Paste one topic per line. You can also use <b>title, description</b> per line.</label>
+                <textarea id="bulkPaste" rows="8" style="width:100%; margin-top:8px; padding:12px; border-radius:12px; border: none; color:#fff; background: rgba(255,255,255,.18);" placeholder="Topic A&#10;Topic B, optional description&#10;Topic C"></textarea>
+            </div>
+
+            <!-- Upload Panel -->
+            <div id="tab-upload" class="tab-panel">
+                <div class="row" style="margin-top:4px;">
+                    <input id="bulkFile" type="file" accept=".csv" style="display:none;" />
+                    <button class="btn secondary" id="chooseCsvBtn">Choose CSV</button>
+                    <span class="helper" id="csvFileName" style="min-height:24px;"></span>
+                </div>
+                <div class="helper" style="margin-top:10px;">CSV format: <b>title, description</b> (header optional). We handle quoted commas.</div>
+            </div>
+
+            <div style="margin-top:16px;">
+                <div style="font-weight:700; margin-bottom:8px;">Bulk Intervals</div>
+                <div class="interval-options" id="bulkIntervalOptions">
+                    <button class="interval-btn" data-days="1">1 Day</button>
+                    <button class="interval-btn" data-days="7">7 Days</button>
+                    <button class="interval-btn" data-days="14">14 Days</button>
+                    <button class="interval-btn" data-days="30">30 Days</button>
+                    <button class="interval-btn" data-days="custom">Custom</button>
+                </div>
+                <div class="custom-interval" id="bulkCustomWrap" style="margin-bottom:8px;">
+                    <input type="number" id="bulkCustomDays" min="1" max="365" value="1" placeholder="Days" />
+                    <button type="button" class="btn" style="padding: 8px 16px; margin-left: 10px;" id="bulkAddCustomBtn">Add Custom</button>
+                </div>
+            </div>
+
+            <div style="margin-top:16px;">
+                <div style="font-weight:700; margin-bottom:8px;">Preview</div>
+                <div id="bulkPreview" class="preview-box">No items yet.</div>
+            </div>
+
+            <div class="row" style="margin-top:16px; justify-content:flex-end;">
+                <button class="btn secondary" id="bulkCancel">Cancel</button>
+                <button class="btn" id="bulkConfirm">Add All</button>
+            </div>
+        </div>
+    </div>
+
 <script>
 class TopicSpacedRepetition {
     constructor() {
         this.topics = JSON.parse(localStorage.getItem('srTopics') || '[]');
         this.completedToday = JSON.parse(localStorage.getItem('completedToday') || '[]');
         this.selectedIntervals = [];
+        this.bulkSelectedIntervals = [];
         this.currentDate = new Date();
 
         // Daily reset
@@ -403,7 +483,10 @@ class TopicSpacedRepetition {
             if (e.target === this.modal) this.closeDateModal();
         });
 
-        this.initIntervalButtons();
+        this.initIntervalButtons('#mainIntervalOptions', false);
+        this.initIntervalButtons('#bulkIntervalOptions', true);
+        this.initBulkModal();
+
         this.updateDashboard();
         this.updateCalendar();
     }
@@ -424,57 +507,272 @@ class TopicSpacedRepetition {
     }
 
     /* -------- Intervals UI -------- */
-    initIntervalButtons() {
-        const buttons = document.querySelectorAll('.interval-btn');
-        buttons.forEach(btn => {
+    initIntervalButtons(containerSelector, isBulk) {
+        const container = document.querySelector(containerSelector);
+        const btns = container.querySelectorAll('.interval-btn');
+        btns.forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
-                const days = btn.dataset.days;
+                const daysVal = btn.dataset.days;
+                const list = isBulk ? this.bulkSelectedIntervals : this.selectedIntervals;
 
-                if (days === 'custom') {
-                    document.getElementById('customInterval').classList.add('show');
+                if (daysVal === 'custom') {
+                    (isBulk ? document.getElementById('bulkCustomWrap') : document.getElementById('customInterval')).classList.add('show');
                     return;
                 }
+
+                const days = parseInt(daysVal, 10);
                 if (btn.classList.contains('selected')) {
                     btn.classList.remove('selected');
-                    this.selectedIntervals = this.selectedIntervals.filter(interval => interval !== parseInt(days));
+                    const idx = list.indexOf(days);
+                    if (idx > -1) list.splice(idx,1);
                 } else {
                     btn.classList.add('selected');
-                    if (!this.selectedIntervals.includes(parseInt(days))) {
-                        this.selectedIntervals.push(parseInt(days));
-                    }
+                    if (!list.includes(days)) list.push(days);
                 }
-                this.updateIntervalsList();
+                this.updateIntervalsListDisplay(isBulk);
             });
         });
+
+        // Custom add buttons
+        if (isBulk) {
+            const customBtn = document.getElementById('bulkAddCustomBtn');
+            customBtn.addEventListener('click', () => {
+                const customDays = parseInt(document.getElementById('bulkCustomDays').value, 10);
+                if (customDays && customDays > 0 && !this.bulkSelectedIntervals.includes(customDays)) {
+                    this.bulkSelectedIntervals.push(customDays);
+                    this.updateIntervalsListDisplay(true);
+                    document.getElementById('bulkCustomDays').value = '';
+                    document.getElementById('bulkCustomWrap').classList.remove('show');
+                }
+            });
+        }
     }
 
     addCustomInterval() {
         const customDays = parseInt(document.getElementById('customDays').value);
         if (customDays && customDays > 0 && !this.selectedIntervals.includes(customDays)) {
             this.selectedIntervals.push(customDays);
-            this.updateIntervalsList();
+            this.updateIntervalsListDisplay(false);
             document.getElementById('customDays').value = '';
             document.getElementById('customInterval').classList.remove('show');
         }
     }
 
-    updateIntervalsList() {
-        const intervalsList = document.getElementById('intervalsList');
-        if (this.selectedIntervals.length === 0) {
-            intervalsList.innerHTML = 'None selected - please choose at least one interval';
-            intervalsList.style.color = '#fbbf24';
+    updateIntervalsListDisplay(isBulk) {
+        if (isBulk) {
+            // show selection as helper in preview header (no dedicated list UI here)
+            this.updateBulkPreview();
         } else {
-            const sortedIntervals = [...this.selectedIntervals].sort((a, b) => a - b);
-            intervalsList.innerHTML = sortedIntervals.map(days => {
-                if (days === 1) return '1 day';
-                if (days === 7) return '1 week';
-                if (days === 14) return '2 weeks';
-                if (days === 30) return '1 month';
-                return `${days} days`;
-            }).join(' • ');
-            intervalsList.style.color = '#34d399';
+            const intervalsList = document.getElementById('intervalsList');
+            if (this.selectedIntervals.length === 0) {
+                intervalsList.innerHTML = 'None selected — please choose at least one interval';
+                intervalsList.style.color = '#fbbf24';
+            } else {
+                const sorted = [...this.selectedIntervals].sort((a,b)=>a-b);
+                intervalsList.innerHTML = sorted.map(days => {
+                    if (days === 1) return '1 day';
+                    if (days === 7) return '1 week';
+                    if (days === 14) return '2 weeks';
+                    if (days === 30) return '1 month';
+                    return `${days} days`;
+                }).join(' • ');
+                intervalsList.style.color = '#34d399';
+            }
         }
+    }
+
+    /* ---------- Bulk Add ---------- */
+    initBulkModal() {
+        const bulkModal = document.getElementById('bulkModal');
+        const tabs = document.querySelectorAll('.tab');
+        const panels = {
+            paste: document.getElementById('tab-paste'),
+            upload: document.getElementById('tab-upload')
+        };
+
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                tabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                const key = tab.dataset.tab;
+                Object.values(panels).forEach(p => p.classList.remove('show'));
+                panels[key].classList.add('show');
+            });
+        });
+
+        // Open/close
+        document.getElementById('bulkCloseBtn').addEventListener('click', () => this.closeBulkModal());
+        document.getElementById('bulkCancel').addEventListener('click', () => this.closeBulkModal());
+        bulkModal.addEventListener('click', (e) => {
+            if (e.target.id === 'bulkModal') this.closeBulkModal();
+        });
+
+        // CSV choose
+        document.getElementById('chooseCsvBtn').addEventListener('click', () => document.getElementById('bulkFile').click());
+        document.getElementById('bulkFile').addEventListener('change', (e) => this.handleCsvFile(e));
+
+        // Paste live preview
+        document.getElementById('bulkPaste').addEventListener('input', () => this.updateBulkPreview());
+
+        // Confirm
+        document.getElementById('bulkConfirm').addEventListener('click', () => this.confirmBulkAdd());
+    }
+
+    openBulkModal() {
+        // reset view
+        document.getElementById('bulkPaste').value = '';
+        document.getElementById('csvFileName').textContent = '';
+        this.bulkSelectedIntervals = [];
+        // deselect all bulk interval pills
+        document.querySelectorAll('#bulkIntervalOptions .interval-btn').forEach(btn => btn.classList.remove('selected'));
+        document.getElementById('bulkCustomWrap').classList.remove('show');
+
+        this.updateBulkPreview();
+        document.getElementById('bulkModal').style.display = 'flex';
+    }
+
+    closeBulkModal() { document.getElementById('bulkModal').style.display = 'none'; }
+
+    updateBulkPreview() {
+        const preview = document.getElementById('bulkPreview');
+        const text = document.getElementById('bulkPaste').value || '';
+        const rows = this.parseLooseLines(text);
+
+        const intervalsLabel = (this.bulkSelectedIntervals.length
+            ? 'Intervals: ' + [...this.bulkSelectedIntervals].sort((a,b)=>a-b).map(d => d+'d').join(' • ')
+            : 'No intervals selected');
+
+        if (rows.length === 0) {
+            preview.innerHTML = `No items yet.<div class="helper" style="margin-top:6px;">${intervalsLabel}</div>`;
+            return;
+        }
+
+        preview.innerHTML = `
+            <div style="font-weight:700; margin-bottom:6px;">Parsed ${rows.length} topic(s)</div>
+            <div class="helper" style="margin-bottom:6px;">${intervalsLabel}</div>
+            ${rows.map(r => `<div class="preview-item"><b>${this.escape(r.title)}</b>${r.description ? ' — ' + this.escape(r.description) : ''}</div>`).join('')}
+        `;
+    }
+
+    handleCsvFile(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        document.getElementById('csvFileName').textContent = file.name;
+
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const text = ev.target.result;
+            const rows = this.parseCSV(text);
+            // Put into paste box for uniform preview/editing
+            const lines = rows.map(r => r.description ? `${r.title}, ${r.description}` : r.title).join('\n');
+            document.getElementById('bulkPaste').value = lines;
+            this.updateBulkPreview();
+        };
+        reader.readAsText(file);
+    }
+
+    confirmBulkAdd() {
+        const text = document.getElementById('bulkPaste').value || '';
+        const rows = this.parseLooseLines(text);
+        if (rows.length === 0) { alert('No topics to add.'); return; }
+        if (this.bulkSelectedIntervals.length === 0) { alert('Select at least one interval for bulk add.'); return; }
+
+        const baseStart = Date.now();
+        let baseOffset = 0;
+
+        rows.forEach(row => {
+            const baseId = baseStart + (baseOffset++); // ensure unique groups per row
+            this.bulkSelectedIntervals.forEach((interval, idx) => {
+                const topic = {
+                    id: baseId + idx,
+                    baseId,
+                    title: row.title,
+                    description: row.description || '',
+                    interval: interval,
+                    nextReview: new Date(Date.now() + interval*24*60*60*1000),
+                    created: new Date(),
+                    completedCount: 0,
+                    lastCompleted: null,
+                    intervalGroup: this.bulkSelectedIntervals.slice()
+                };
+                this.topics.push(topic);
+            });
+        });
+
+        this.saveTopics();
+        this.updateDashboard();
+        this.updateTopicsList();
+        this.updateCalendar();
+
+        this.closeBulkModal();
+        alert(`Added ${rows.length} topic(s).`);
+    }
+
+    /* ---------- Parsers ---------- */
+    parseLooseLines(text) {
+        // Accepts lines like:
+        // Title
+        // Title, Description
+        return text
+            .split(/\r?\n/)
+            .map(l => l.trim())
+            .filter(l => l.length > 0)
+            .map(l => {
+                // If line contains a comma, split into 2 parts (title, description), respecting quotes if any.
+                const asCsv = this.parseCSV(l + '\n'); // reuse CSV line parser
+                if (asCsv.length > 0 && asCsv[0].title) return asCsv[0];
+                // fallback: whole line as title
+                return { title: l, description: '' };
+            });
+    }
+
+    parseCSV(text) {
+        // Basic CSV parser handling quotes and commas. Returns array of {title, description}
+        const rows = [];
+        let cur = [], field = '', inQuotes = false, i = 0;
+
+        const pushField = () => { cur.push(field); field = ''; };
+        const pushRow = () => {
+            if (cur.length === 1) rows.push({ title: (cur[0] || '').trim(), description: '' });
+            else if (cur.length >= 2) rows.push({
+                title: (cur[0] || '').trim(),
+                description: cur.slice(1).join(',').trim()
+            });
+            cur = [];
+        };
+
+        while (i < text.length) {
+            const ch = text[i];
+            if (inQuotes) {
+                if (ch === '"') {
+                    if (text[i+1] === '"') { field += '"'; i++; } // escaped quote
+                    else { inQuotes = false; }
+                } else field += ch;
+            } else {
+                if (ch === '"') inQuotes = true;
+                else if (ch === ',') pushField();
+                else if (ch === '\n' || ch === '\r') {
+                    if (field.length || cur.length) { pushField(); pushRow(); }
+                    // consume potential \r\n
+                    if (ch === '\r' && text[i+1] === '\n') i++;
+                } else field += ch;
+            }
+            i++;
+        }
+        if (field.length || cur.length) { pushField(); pushRow(); }
+
+        // Strip header if looks like one
+        if (rows.length && /title/i.test(rows[0].title) && (/desc/i.test(rows[0].description) || /description/i.test(rows[0].description))) {
+            rows.shift();
+        }
+
+        // Filter empty titles
+        return rows.filter(r => r.title && r.title.trim().length > 0);
+    }
+
+    escape(s) {
+        return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
 
     /* -------- CRUD -------- */
@@ -510,8 +808,8 @@ class TopicSpacedRepetition {
         document.getElementById('topicTitle').value = '';
         document.getElementById('topicDescription').value = '';
         this.selectedIntervals = [];
-        this.updateIntervalsList();
-        document.querySelectorAll('.interval-btn').forEach(btn => btn.classList.remove('selected'));
+        this.updateIntervalsListDisplay(false);
+        document.querySelectorAll('#mainIntervalOptions .interval-btn').forEach(btn => btn.classList.remove('selected'));
         document.getElementById('customInterval').classList.remove('show');
 
         showTab('dashboard');
@@ -872,6 +1170,7 @@ function changeMonth(direction) { app.changeMonth(direction); }
 function goToToday() { app.goToToday(); }
 function addTopic() { app.addTopic(); }
 function addCustomInterval() { app.addCustomInterval(); }
+function openBulkModal() { app.openBulkModal(); }
 </script>
 </body>
 </html>
