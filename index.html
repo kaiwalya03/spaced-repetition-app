@@ -3,6 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#667eea">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Spaced Repetition">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
     <title>Topic Spaced Repetition</title>
     <style>
         * {
@@ -488,9 +493,12 @@
                 </div>
 
                 <div class="form-group">
-                    <label>Review Interval:</label>
+                    <label>Review Intervals (Select Multiple):</label>
+                    <p style="font-size: 0.9em; opacity: 0.8; margin-bottom: 15px;">
+                        Choose one or more intervals - topic will repeat on ALL selected schedules
+                    </p>
                     <div class="interval-options">
-                        <button class="interval-btn selected" data-days="1">1 Day</button>
+                        <button class="interval-btn" data-days="1">1 Day</button>
                         <button class="interval-btn" data-days="7">7 Days</button>
                         <button class="interval-btn" data-days="14">14 Days</button>
                         <button class="interval-btn" data-days="30">30 Days</button>
@@ -498,8 +506,15 @@
                     </div>
                     
                     <div class="custom-interval" id="customInterval">
-                        <input type="number" id="customDays" min="1" max="365" value="1">
-                        <span>days</span>
+                        <input type="number" id="customDays" min="1" max="365" value="1" placeholder="Days">
+                        <button type="button" class="btn" style="padding: 8px 16px; margin-left: 10px;" onclick="addCustomInterval()">Add Custom</button>
+                    </div>
+                    
+                    <div id="selectedIntervals" style="margin-top: 15px;">
+                        <div style="font-weight: 600; margin-bottom: 10px;">Selected Intervals:</div>
+                        <div id="intervalsList" style="color: #34d399; font-size: 0.9em;">
+                            None selected - please choose at least one interval
+                        </div>
                     </div>
                 </div>
 
@@ -533,7 +548,7 @@
             constructor() {
                 this.topics = JSON.parse(localStorage.getItem('srTopics') || '[]');
                 this.completedToday = JSON.parse(localStorage.getItem('completedToday') || '[]');
-                this.selectedInterval = 1;
+                this.selectedIntervals = [];
                 this.currentDate = new Date();
                 
                 // Reset daily counter if it's a new day
@@ -553,24 +568,57 @@
             initIntervalButtons() {
                 const buttons = document.querySelectorAll('.interval-btn');
                 buttons.forEach(btn => {
-                    btn.addEventListener('click', () => {
-                        buttons.forEach(b => b.classList.remove('selected'));
-                        btn.classList.add('selected');
-                        
+                    btn.addEventListener('click', (e) => {
+                        e.preventDefault();
                         const days = btn.dataset.days;
+                        
                         if (days === 'custom') {
                             document.getElementById('customInterval').classList.add('show');
-                            this.selectedInterval = parseInt(document.getElementById('customDays').value);
-                        } else {
-                            document.getElementById('customInterval').classList.remove('show');
-                            this.selectedInterval = parseInt(days);
+                            return;
                         }
+                        
+                        // Toggle selection
+                        if (btn.classList.contains('selected')) {
+                            btn.classList.remove('selected');
+                            this.selectedIntervals = this.selectedIntervals.filter(interval => interval !== parseInt(days));
+                        } else {
+                            btn.classList.add('selected');
+                            if (!this.selectedIntervals.includes(parseInt(days))) {
+                                this.selectedIntervals.push(parseInt(days));
+                            }
+                        }
+                        
+                        this.updateIntervalsList();
                     });
                 });
+            }
 
-                document.getElementById('customDays').addEventListener('input', (e) => {
-                    this.selectedInterval = parseInt(e.target.value) || 1;
-                });
+            addCustomInterval() {
+                const customDays = parseInt(document.getElementById('customDays').value);
+                if (customDays && customDays > 0 && !this.selectedIntervals.includes(customDays)) {
+                    this.selectedIntervals.push(customDays);
+                    this.updateIntervalsList();
+                    document.getElementById('customDays').value = '';
+                    document.getElementById('customInterval').classList.remove('show');
+                }
+            }
+
+            updateIntervalsList() {
+                const intervalsList = document.getElementById('intervalsList');
+                if (this.selectedIntervals.length === 0) {
+                    intervalsList.innerHTML = 'None selected - please choose at least one interval';
+                    intervalsList.style.color = '#fbbf24';
+                } else {
+                    const sortedIntervals = [...this.selectedIntervals].sort((a, b) => a - b);
+                    intervalsList.innerHTML = sortedIntervals.map(days => {
+                        if (days === 1) return '1 day';
+                        if (days === 7) return '1 week';
+                        if (days === 14) return '2 weeks';  
+                        if (days === 30) return '1 month';
+                        return `${days} days`;
+                    }).join(' • ');
+                    intervalsList.style.color = '#34d399';
+                }
             }
 
             addTopic() {
@@ -582,18 +630,29 @@
                     return;
                 }
 
-                const topic = {
-                    id: Date.now(),
-                    title,
-                    description,
-                    interval: this.selectedInterval,
-                    nextReview: new Date(Date.now() + this.selectedInterval * 24 * 60 * 60 * 1000),
-                    created: new Date(),
-                    completedCount: 0,
-                    lastCompleted: null
-                };
+                if (this.selectedIntervals.length === 0) {
+                    alert('Please select at least one review interval');
+                    return;
+                }
 
-                this.topics.push(topic);
+                // Create multiple schedule entries for each interval
+                const baseId = Date.now();
+                this.selectedIntervals.forEach((interval, index) => {
+                    const topic = {
+                        id: baseId + index,
+                        baseId: baseId, // Group related intervals
+                        title,
+                        description,
+                        interval: interval,
+                        nextReview: new Date(Date.now() + interval * 24 * 60 * 60 * 1000),
+                        created: new Date(),
+                        completedCount: 0,
+                        lastCompleted: null,
+                        intervalGroup: this.selectedIntervals.slice() // Store all intervals in this group
+                    };
+                    this.topics.push(topic);
+                });
+
                 this.saveTopics();
                 this.updateDashboard();
                 this.updateTopicsList();
@@ -602,6 +661,12 @@
                 // Clear form
                 document.getElementById('topicTitle').value = '';
                 document.getElementById('topicDescription').value = '';
+                this.selectedIntervals = [];
+                this.updateIntervalsList();
+                
+                // Reset interval buttons
+                document.querySelectorAll('.interval-btn').forEach(btn => btn.classList.remove('selected'));
+                document.getElementById('customInterval').classList.remove('show');
                 
                 // Switch to dashboard
                 showTab('dashboard');
@@ -615,8 +680,8 @@
                 topic.completedCount++;
                 topic.nextReview = new Date(Date.now() + topic.interval * 24 * 60 * 60 * 1000);
 
-                if (!this.completedToday.includes(topicId)) {
-                    this.completedToday.push(topicId);
+                if (!this.completedToday.includes(topic.baseId)) {
+                    this.completedToday.push(topic.baseId);
                     localStorage.setItem('completedToday', JSON.stringify(this.completedToday));
                 }
 
@@ -627,8 +692,12 @@
             }
 
             deleteTopic(topicId) {
-                if (confirm('Are you sure you want to delete this topic?')) {
-                    this.topics = this.topics.filter(t => t.id !== topicId);
+                const topic = this.topics.find(t => t.id === topicId);
+                if (!topic) return;
+
+                if (confirm('Are you sure you want to delete this topic? This will remove ALL intervals for this topic.')) {
+                    // Delete all topics with the same baseId (all intervals for this topic)
+                    this.topics = this.topics.filter(t => t.baseId !== topic.baseId);
                     this.saveTopics();
                     this.updateDashboard();
                     this.updateTopicsList();
@@ -638,7 +707,7 @@
 
             getDueTopics() {
                 const now = new Date();
-                now.setHours(23, 59, 59, 999); // End of today
+                now.setHours(23, 59, 59, 999);
                 return this.topics.filter(topic => new Date(topic.nextReview) <= now);
             }
 
@@ -656,33 +725,73 @@
 
             updateDashboard() {
                 const dueTopics = this.getDueTopics();
-                document.getElementById('statsDue').textContent = dueTopics.length;
-                document.getElementById('statsTotal').textContent = this.topics.length;
+                const uniqueBaseDue = [...new Set(dueTopics.map(t => t.baseId))];
+                const uniqueBaseTotal = [...new Set(this.topics.map(t => t.baseId))];
+                
+                document.getElementById('statsDue').textContent = uniqueBaseDue.length;
+                document.getElementById('statsTotal').textContent = uniqueBaseTotal.length;
                 document.getElementById('statsCompleted').textContent = this.completedToday.length;
 
-                // Update today's topics list
+                // Group due topics by baseId for display
+                const groupedDueTopics = {};
+                dueTopics.forEach(topic => {
+                    if (!groupedDueTopics[topic.baseId]) {
+                        groupedDueTopics[topic.baseId] = {
+                            ...topic,
+                            intervals: []
+                        };
+                    }
+                    groupedDueTopics[topic.baseId].intervals.push(topic.interval);
+                });
+
                 const todayList = document.getElementById('todayTopicsList');
-                if (dueTopics.length === 0) {
+                if (Object.keys(groupedDueTopics).length === 0) {
                     todayList.innerHTML = '<div class="no-topics">🎉 No topics due today! Great job!</div>';
                 } else {
-                    todayList.innerHTML = dueTopics.map(topic => `
+                    todayList.innerHTML = Object.values(groupedDueTopics).map(topic => `
                         <div class="topic-item">
                             <div class="topic-info">
                                 <div class="topic-title">${topic.title}</div>
                                 ${topic.description ? `<div class="topic-description">${topic.description}</div>` : ''}
                                 <div class="topic-meta">
-                                    Interval: ${topic.interval} days | 
+                                    Due intervals: ${topic.intervals.sort((a,b) => a-b).map(i => i + 'd').join(', ')} | 
                                     Completed: ${topic.completedCount} times
                                 </div>
                             </div>
                             <div class="topic-actions">
-                                <button class="action-btn complete" onclick="app.completeTopic(${topic.id})">
-                                    ✓ Complete
+                                <button class="action-btn complete" onclick="app.completeTopicGroup(${topic.baseId})">
+                                    ✓ Complete All
                                 </button>
                             </div>
                         </div>
                     `).join('');
                 }
+            }
+
+            completeTopicGroup(baseId) {
+                // Complete all intervals for this topic
+                const topicsInGroup = this.topics.filter(t => t.baseId === baseId);
+                const dueTopicsInGroup = topicsInGroup.filter(topic => {
+                    const now = new Date();
+                    now.setHours(23, 59, 59, 999);
+                    return new Date(topic.nextReview) <= now;
+                });
+
+                dueTopicsInGroup.forEach(topic => {
+                    topic.lastCompleted = new Date();
+                    topic.completedCount++;
+                    topic.nextReview = new Date(Date.now() + topic.interval * 24 * 60 * 60 * 1000);
+                });
+
+                if (!this.completedToday.includes(baseId)) {
+                    this.completedToday.push(baseId);
+                    localStorage.setItem('completedToday', JSON.stringify(this.completedToday));
+                }
+
+                this.saveTopics();
+                this.updateDashboard();
+                this.updateTopicsList();
+                this.updateCalendar();
             }
 
             updateTopicsList() {
@@ -692,13 +801,30 @@
                     return;
                 }
 
-                const sortedTopics = [...this.topics].sort((a, b) => new Date(a.nextReview) - new Date(b.nextReview));
+                // Group topics by baseId
+                const groupedTopics = {};
+                this.topics.forEach(topic => {
+                    if (!groupedTopics[topic.baseId]) {
+                        groupedTopics[topic.baseId] = {
+                            ...topic,
+                            intervals: [],
+                            nextReviews: []
+                        };
+                    }
+                    groupedTopics[topic.baseId].intervals.push(topic.interval);
+                    groupedTopics[topic.baseId].nextReviews.push(new Date(topic.nextReview));
+                });
+
+                const sortedTopics = Object.values(groupedTopics).sort((a, b) => 
+                    Math.min(...a.nextReviews) - Math.min(...b.nextReviews)
+                );
                 
                 topicList.innerHTML = sortedTopics.map(topic => {
-                    const nextReview = new Date(topic.nextReview);
+                    const nextReview = Math.min(...topic.nextReviews);
+                    const nextReviewDate = new Date(nextReview);
                     const now = new Date();
-                    const isOverdue = nextReview < now;
-                    const isDueToday = nextReview.toDateString() === now.toDateString();
+                    const isOverdue = nextReviewDate < now;
+                    const isDueToday = nextReviewDate.toDateString() === now.toDateString();
                     
                     let statusClass = 'status-future';
                     let statusText = 'Scheduled';
@@ -708,10 +834,12 @@
                         statusText = 'Due';
                     }
                     
-                    if (this.completedToday.includes(topic.id)) {
+                    if (this.completedToday.includes(topic.baseId)) {
                         statusClass = 'status-completed';
                         statusText = 'Completed';
                     }
+
+                    const sortedIntervals = topic.intervals.sort((a,b) => a-b);
 
                     return `
                         <div class="topic-item">
@@ -722,14 +850,14 @@
                                 </div>
                                 ${topic.description ? `<div class="topic-description">${topic.description}</div>` : ''}
                                 <div class="topic-meta">
-                                    Next review: ${nextReview.toLocaleDateString()} | 
-                                    Interval: ${topic.interval} days | 
+                                    Next review: ${nextReviewDate.toLocaleDateString()} | 
+                                    Intervals: ${sortedIntervals.map(i => i + 'd').join(', ')} | 
                                     Completed: ${topic.completedCount} times
                                 </div>
                             </div>
                             <div class="topic-actions">
-                                ${!this.completedToday.includes(topic.id) && (isOverdue || isDueToday) ? 
-                                    `<button class="action-btn complete" onclick="app.completeTopic(${topic.id})">✓ Complete</button>` : ''
+                                ${!this.completedToday.includes(topic.baseId) && (isOverdue || isDueToday) ? 
+                                    `<button class="action-btn complete" onclick="app.completeTopicGroup(${topic.baseId})">✓ Complete</button>` : ''
                                 }
                                 <button class="action-btn delete" onclick="app.deleteTopic(${topic.id})">🗑️</button>
                             </div>
@@ -847,6 +975,11 @@
         // Add topic function
         function addTopic() {
             app.addTopic();
+        }
+
+        // Add custom interval function
+        function addCustomInterval() {
+            app.addCustomInterval();
         }
     </script>
 </body>
